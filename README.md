@@ -78,4 +78,4 @@ python scripts/download_album.py "https://buondua.com/ag-674-yeonyu-yeon-yu-148-
 
 ## License
 
-Distributed under the **Apache-2.0** License. See `SKILL.md` for more details.
+Distributed under the **GPLv3** License. See `SKILL.md` for more details.
