@@ -286,8 +286,26 @@ async def run_downloader(args):
         os.makedirs(album_dir, exist_ok=True)
         print(f"[+] Target download directory: {album_dir}")
 
-        # Map all album page URLs
-        page_urls = await extract_pagination_urls(page, url)
+        # Resolve the canonical URL from the page — the server may normalize special characters
+        # in the URL (e.g. '…' → 'yeha-hina'), so we must use the server's actual slug for
+        # pagination link matching, not the user-supplied URL which may differ.
+        canonical_url = url
+        try:
+            canonical_el = await page.query_selector("link[rel='canonical']")
+            if canonical_el:
+                canonical_href = await canonical_el.get_attribute("href")
+                if canonical_href:
+                    # Strip any ?page=N suffix from the canonical URL to get base URL
+                    canonical_base = canonical_href.split("?")[0].rstrip("/")
+                    if canonical_base:
+                        canonical_url = canonical_base
+                        if canonical_url != url:
+                            print(f"[+] Canonical URL resolved: {canonical_url}")
+        except Exception as e:
+            print(f"[-] Could not resolve canonical URL, using original: {e}")
+
+        # Map all album page URLs using the canonical URL as the base
+        page_urls = await extract_pagination_urls(page, canonical_url)
         print(f"[+] Found {len(page_urls)} album pages to download:")
         for idx, p_url in enumerate(page_urls, 1):
             print(f"    Page {idx}: {p_url}")
