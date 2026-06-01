@@ -6,7 +6,7 @@ import re
 import sys
 import argparse
 import asyncio
-from urllib.parse import urlparse, urljoin, parse_qs
+from urllib.parse import urlparse, urljoin, parse_qs, unquote
 from playwright.async_api import async_playwright
 
 # Reconfigure stdout/stderr to UTF-8 on Windows or other non-UTF-8 terminals
@@ -170,7 +170,8 @@ async def extract_pagination_urls(page, start_url):
     """
     print("[+] Extracting pagination links...")
     parsed_start = urlparse(start_url)
-    start_path = parsed_start.path.rstrip('/')
+    # Decode percent-encoding so we can compare against decoded hrefs from the page DOM
+    start_path = unquote(parsed_start.path.rstrip('/'))
 
     # Get all links on the page
     links = await page.query_selector_all("a")
@@ -189,7 +190,8 @@ async def extract_pagination_urls(page, start_url):
         if parsed_abs.netloc != parsed_start.netloc:
             continue
 
-        abs_path = parsed_abs.path.rstrip('/')
+        # Decode both sides before comparing to handle percent-encoded Unicode in URLs
+        abs_path = unquote(parsed_abs.path.rstrip('/'))
         
         # Check if the base path is identical (e.g., /album-slug)
         if abs_path == start_path:
@@ -290,8 +292,51 @@ async def run_downloader(args):
         for idx, p_url in enumerate(page_urls, 1):
             print(f"    Page {idx}: {p_url}")
 
-        total_images_downloaded = 0
-        all_unique_images = []
+        img_counter = 0
+        all_unique_images = set()
+
+        # Create a queue for download tasks
+        queue = asyncio.Queue()
+
+        # Track successfully downloaded count
+        stats = {
+            "downloaded": 0,
+            "failed": 0
+        }
+
+        # Background worker for downloading images sequentially
+        async def download_worker():
+            while True:
+                task = await queue.get()
+                if task is None:
+                    queue.task_done()
+                    break
+                
+                img_idx, img_url = task
+                parsed_path = urlparse(img_url).path
+                _, ext = os.path.splitext(parsed_path)
+                if not ext or len(ext) > 5:  # Handle cases without clear extensions
+                    ext = ".jpg"
+                
+                # Format filename as 001.jpg, 002.jpg, etc.
+                filename = f"{img_idx:03d}{ext}"
+                dest_path = os.path.join(album_dir, filename)
+
+                print(f"[+] [{img_idx}] Downloading {filename}...")
+                
+                success = await download_image(page, img_url, dest_path, referer=url)
+                if success:
+                    stats["downloaded"] += 1
+                    # Wait briefly between downloads to avoid rate limits
+                    await asyncio.sleep(download_delay)
+                else:
+                    print(f"[-] Failed to download image {img_idx}: {img_url}")
+                    stats["failed"] += 1
+                
+                queue.task_done()
+
+        # Start the background download worker task
+        worker_task = asyncio.create_task(download_worker())
 
         # Process page by page
         for page_idx, target_page_url in enumerate(page_urls, 1):
@@ -315,34 +360,20 @@ async def run_downloader(args):
             # Keep track of unique image URLs overall to avoid duplicates
             for img_url in page_images:
                 if img_url not in all_unique_images:
-                    all_unique_images.append(img_url)
+                    all_unique_images.add(img_url)
+                    img_counter += 1
+                    await queue.put((img_counter, img_url))
 
-        print(f"\n[+] Total unique photos resolved across all pages: {len(all_unique_images)}")
-        
-        # Download all resolved images
-        for img_idx, img_url in enumerate(all_unique_images, 1):
-            # Parse extension from URL, fallback to .jpg
-            parsed_path = urlparse(img_url).path
-            _, ext = os.path.splitext(parsed_path)
-            if not ext or len(ext) > 5:  # Handle cases without clear extensions
-                ext = ".jpg"
-            
-            # Format filename as 001.jpg, 002.jpg, etc.
-            filename = f"{img_idx:03d}{ext}"
-            dest_path = os.path.join(album_dir, filename)
+        # Wait for all queued items to finish downloading
+        print("\n[+] Finished parsing all pages. Waiting for remaining downloads to complete...")
+        await queue.join()
 
-            print(f"[+] [{img_idx}/{len(all_unique_images)}] Downloading {filename}...")
-            
-            success = await download_image(page, img_url, dest_path, referer=url)
-            if success:
-                total_images_downloaded += 1
-                # Wait briefly between downloads to avoid rate limits
-                await asyncio.sleep(download_delay)
-            else:
-                print(f"[-] Failed to download image: {img_url}")
+        # Stop worker
+        await queue.put(None)
+        await worker_task
 
         print(f"\n[+] Download completed successfully!")
-        print(f"[+] Total photos downloaded: {total_images_downloaded}/{len(all_unique_images)}")
+        print(f"[+] Total photos downloaded: {stats['downloaded']}/{img_counter}")
         print(f"[+] Folder location: {os.path.abspath(album_dir)}")
 
         await browser.close()
