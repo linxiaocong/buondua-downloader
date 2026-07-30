@@ -1,7 +1,7 @@
 ---
 name: buondua-downloader
 description: Parses an album page on buondua.com and downloads all high-resolution photos across all pages, resolving lazy-loaded images.
-license: Apache-2.0
+license: GPL-3.0
 metadata:
   version: "1.0"
   author: Antigravity
