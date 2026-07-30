@@ -114,6 +114,9 @@ These are deliberate design choices, several of them hard-won against the site's
   and the argument table in `README.md`. They currently agree; keep them that way.
 - **`SKILL.md` frontmatter** (`name`, `description`, `license`, `metadata.version`) is the
   OpenClaw manifest. Bump `metadata.version` for behavioral changes to the skill contract.
+- **The project is GPLv3**, stated in three places that must agree: the `LICENSE` file, the
+  `license:` field in `SKILL.md` frontmatter (`GPL-3.0`), and the License section of
+  `README.md`.
 - **No tests, no linter, no CI.** Verification is manual: run the script against a real album
   URL and check the page count, the resolved image count, and that the files on disk are
   full-resolution photos rather than thumbnails. `--no-headless` plus a small album is the
@@ -127,9 +130,6 @@ These are deliberate design choices, several of them hard-won against the site's
 Worth knowing before you're asked to change something nearby — none are currently bugs the
 user has asked to fix, so raise them rather than silently rewriting:
 
-- **License is inconsistent across files.** `LICENSE` is GPLv3, `README.md` says GPLv3, but
-  the `license:` field in `SKILL.md` frontmatter says `Apache-2.0`. Ask which is intended
-  before changing any of them.
 - **Pagination is discovered only from the first page.** If the site ever truncates its
   pager (`1 2 3 … 10`), later pages would be missed. Currently all page links are rendered,
   so it works.
